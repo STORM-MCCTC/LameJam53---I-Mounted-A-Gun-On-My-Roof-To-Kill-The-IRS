@@ -1,6 +1,7 @@
 import pygame
 import math
 import random
+import time
 
 # pygame setup
 pygame.init()
@@ -22,14 +23,18 @@ title_screen = pygame.image.load("assets/textures/title.png").convert_alpha()
 title_screen = pygame.transform.scale(title_screen, (640, 360))
 title_surface = pygame.Surface((1280, 720))
 title_surface.blit(title_screen, ((1280 - title_screen.get_width()) // 2, (720 - title_screen.get_height()) // 2))
-pygame.mixer.music.load("assets/music/Mozart-EineKleineNachtmusik8-bit.mp3")
-pygame.mixer.music.set_volume(0.5)
-pygame.mixer.music.play(-1)
 shoot_sfx = pygame.mixer.Sound("assets/sfx/gun.wav")
 end_explosion_sfx = pygame.mixer.Sound("assets/sfx/end_explosion.wav")
 explosion_sfx = pygame.mixer.Sound("assets/sfx/explosion.wav")
 explosion_image = pygame.image.load("assets/textures/explosion.png").convert_alpha()
 explosion_image = pygame.transform.scale(explosion_image, (150, 150))
+bullet_image = pygame.image.load("assets/textures/bullet.png").convert_alpha()
+bullet_image = pygame.transform.scale(bullet_image, (64, 64))
+font = pygame.font.Font("assets/fonts/daydream_3/Daydream.ttf", 16)
+font2 = pygame.font.Font("assets/fonts/daydream_3/Daydream.ttf", 64)
+pygame.mixer.music.load("assets/music/Mozart-EineKleineNachtmusik8-bit.mp3")
+pygame.mixer.music.set_volume(0.5)
+pygame.mixer.music.play(-1)
 
 #functions
 def fade_out(surface, duration=1000):
@@ -105,8 +110,21 @@ explosions = []
 
 # Settings
 projectile_speed = 10
-enemy_speed = 2
+cannon_shoot_delay = 3000
+enemy_speed = 2.0
 enemy_spawn_delay = 1000
+
+# Money Sys
+money = 0.0
+moneyMultiplier = 1.0
+
+# Waves
+wave = 1
+wave_high = 0
+enemies_remaining = 5  # enemies in the current wave
+spawned_enemies = 0
+wave_font = pygame.font.Font("assets/fonts/daydream_3/Daydream.ttf", 32)
+wave_active = True
 
 # Timer for enemy spawn
 ENEMY_SPAWN = pygame.USEREVENT + 1
@@ -120,8 +138,6 @@ while show_title:
             pygame.quit()
             exit()
         elif event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-            title_snapshot = screen.copy()  # Capture current screen (background + cannon + title)
-            crossfade(title_snapshot, draw_initial_game_frame)
             show_title = False
 
     screen.blit(background, (0, 0))
@@ -159,9 +175,11 @@ while running:
             running = False
 
         # Spawn enemy on timer
-        if event.type == ENEMY_SPAWN:
-            y_pos = random.randint(50, 670)
-            enemies.append([0, y_pos])
+        if event.type == ENEMY_SPAWN and wave_active:
+            if spawned_enemies < enemies_remaining:
+                y_pos = random.randint(50, 670)
+                enemies.append([0, y_pos])
+                spawned_enemies += 1
 
         # Fire projectile
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -173,6 +191,8 @@ while running:
             dy /= distance
             projectiles.append([cannon_x, cannon_y, dx, dy])
             shoot_sfx.play()
+
+    current_time = pygame.time.get_ticks()
 
     # Draw background
     screen.blit(background, (0, 0))
@@ -194,6 +214,11 @@ while running:
     # Draw cannon
     screen.blit(rotated_cannon, rect.topleft)
 
+    # Draw On screen Text
+    screen.blit(font.render(f"Money: {money}", True, (255, 255, 255)), (10, 10))
+    screen.blit(font.render(f"Wave: {wave}", True, (255, 255, 255)), (10, 40))
+    screen.blit(font.render(f"Multiplier: X{moneyMultiplier}", True, (255, 255, 255)), (10, 70))
+
     # Update projectiles
     for ball in projectiles:
         ball[0] += ball[2] * projectile_speed
@@ -208,14 +233,22 @@ while running:
         if enemy[0] + 240 >= cannon_x:
             end_explosion_sfx.play()
 
+            # Show GAME OVER text
+            screen.blit(font2.render("GAMEOVER :(", True, (255, 0, 0)), (320, 160))
+            pygame.display.flip()
+            pygame.time.delay(1000)
+
+            if wave > wave_high:
+                wave_high = wave
+
             # Reset game state
             enemies.clear()
             projectiles.clear()
+            money = 0
+            moneyMultiplier = 1
+            wave = 0
+            enemy_speed = 2.0
 
-            # Capture current game frame to crossfade back to title
-            game_snapshot = screen.copy()
-            crossfade(game_snapshot, draw_title_frame)
-            
             # Restart title loop
             show_title = True
             while show_title:
@@ -224,12 +257,11 @@ while running:
                         pygame.quit()
                         exit()
                     elif event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-                        title_snapshot = screen.copy()
-                        crossfade(title_snapshot, draw_initial_game_frame)
                         show_title = False
 
                 # Draw title screen
                 screen.blit(background, (0, 0))
+                screen.blit(font.render(f"HighScore: Wave {wave_high}", True, (255, 255, 255)), (10, 10))
 
                 mouse_x, mouse_y = pygame.mouse.get_pos()
                 dx = mouse_x - cannon_x
@@ -245,7 +277,6 @@ while running:
 
             break  # Exit current game loop so it restarts
 
-
     # Check for collisions and remove enemies hit
     for ball in projectiles:
         ball_rect = pygame.Rect(ball[0] - 4, ball[1] - 4, 8, 8)
@@ -256,9 +287,11 @@ while running:
                 explosions.append([enemy[0], enemy[1], pygame.time.get_ticks()])
                 projectiles.remove(ball)
                 explosion_sfx.play()
+                Multiplieroutput = 1 * moneyMultiplier
+                money += Multiplieroutput
                 break
-    
-    current_time = pygame.time.get_ticks()
+
+    # Explosion handler
     for explosion in explosions[:]:
         x, y, start_time = explosion
         if current_time - start_time < 500:
@@ -268,11 +301,35 @@ while running:
 
     # Draw projectiles
     for ball in projectiles:
-        pygame.draw.circle(screen, "red", (int(ball[0]), int(ball[1])), 8)
+        x, y, dx, dy = ball
+
+        # Calculate angle in degrees
+        angle = math.degrees(math.atan2(-dy, dx)) + 180
+
+        # Rotate the bullet
+        rotated_bullet = pygame.transform.rotate(bullet_image, angle)
+
+        # Draw with center alignment
+        rect = rotated_bullet.get_rect(center=(x, y))
+        screen.blit(rotated_bullet, rect.topleft)
 
     # Draw enemies
     for enemy in enemies:
         screen.blit(basic_IRS, (enemy[0], enemy[1]))
+
+    #Wave logic
+    if wave_active and spawned_enemies == enemies_remaining and len(enemies) == 0:
+        wave += 1
+        enemies_remaining = 5 + wave * 2
+        spawned_enemies = 0
+        wave_active = False
+        wave_cooldown = pygame.time.get_ticks()
+        if enemy_speed < 10:
+            enemy_speed += 0.5
+            print(enemy_speed)
+    if not wave_active:
+        if pygame.time.get_ticks() - wave_cooldown > 2000:  # 2-second delay
+            wave_active = True
 
     pygame.display.flip()
     clock.tick(60)
