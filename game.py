@@ -113,6 +113,8 @@ projectile_speed = 10
 cannon_shoot_delay = 3000
 enemy_speed = 2.0
 enemy_spawn_delay = 1000
+fire_cooldown = 1000
+last_shot_time = 0
 
 # Money Sys
 money = 0.0
@@ -125,6 +127,81 @@ enemies_remaining = 5  # enemies in the current wave
 spawned_enemies = 0
 wave_font = pygame.font.Font("assets/fonts/daydream_3/Daydream.ttf", 32)
 wave_active = True
+
+#upgrade system
+upgrades = [
+    {"name": "Money Multiplier", "key": "moneyMultiplier", "cost": 20, "amount": 1},
+    {"name": "Projectile Speed", "key": "projectile_speed", "cost": 10, "amount": 2},
+    {"name": "Fire Rate", "key": "fire_cooldown", "cost": 10, "amount": -100},
+]
+
+def increase_multiplier():
+    global moneyMultiplier
+    moneyMultiplier *= 2
+
+def increase_projectile_speed():
+    global projectile_speed
+    projectile_speed += 5
+
+def reduce_cooldown():
+    global fire_cooldown
+    fire_cooldown = max(100, fire_cooldown - 100)
+
+def upgrade_phase():
+    global money, moneyMultiplier, projectile_speed, fire_cooldown
+
+    upgrade_active = True
+    start_time = pygame.time.get_ticks()
+
+    while upgrade_active:
+        screen.blit(background, (0, 0))
+
+        # Timer
+        elapsed = (pygame.time.get_ticks() - start_time) // 1000
+        remaining = max(0, 60 - elapsed)
+        screen.blit(font.render(f"Upgrade Time: {remaining}s", True, (255, 255, 0)), (10, 10))
+
+        # Show money
+        screen.blit(font.render(f"Money: ${money}", True, (255, 255, 255)), (10, 50))
+        screen.blit(font.render("press 'enter' to continue", True, (255, 255, 255)), (10, 90))
+
+        # Draw upgrade buttons
+        for i, upgrade in enumerate(upgrades):
+            x, y = 100, 150 + i * 100
+            pygame.draw.rect(screen, (0, 100, 200), (x, y, 400, 80))
+            screen.blit(font.render(f"{upgrade['name']} (${upgrade['cost']})", True, (255, 255, 255)), (x + 10, y + 20))
+
+        pygame.display.flip()
+
+        # SINGLE event loop!
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    upgrade_active = False  # skip phase
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = pygame.mouse.get_pos()
+                for i, upgrade in enumerate(upgrades):
+                    ux, uy, uw, uh = 100, 150 + i * 100, 400, 80
+                    if ux <= mx <= ux + uw and uy <= my <= uy + uh:
+                        if money >= upgrade["cost"]:
+                            money -= upgrade["cost"]
+                            if upgrade["key"] == "moneyMultiplier":
+                                moneyMultiplier += upgrade["amount"]
+                            elif upgrade["key"] == "projectile_speed":
+                                projectile_speed += upgrade["amount"]
+                            elif upgrade["key"] == "fire_cooldown":
+                                fire_cooldown = max(100, fire_cooldown + upgrade["amount"])
+
+        # Auto-exit after 60 seconds
+        if remaining <= 0:
+            upgrade_active = False
+
+        clock.tick(60)
 
 # Timer for enemy spawn
 ENEMY_SPAWN = pygame.USEREVENT + 1
@@ -183,14 +260,17 @@ while running:
 
         # Fire projectile
         if event.type == pygame.MOUSEBUTTONDOWN:
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-            dx = mouse_x - cannon_x
-            dy = mouse_y - cannon_y
-            distance = math.hypot(dx, dy) or 1
-            dx /= distance
-            dy /= distance
-            projectiles.append([cannon_x, cannon_y, dx, dy])
-            shoot_sfx.play()
+            current_time = pygame.time.get_ticks()
+            if current_time - last_shot_time >= fire_cooldown:
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                dx = mouse_x - cannon_x
+                dy = mouse_y - cannon_y
+                distance = math.hypot(dx, dy) or 1
+                dx /= distance
+                dy /= distance
+                projectiles.append([cannon_x, cannon_y, dx, dy])
+                shoot_sfx.play()
+                last_shot_time = current_time
 
     current_time = pygame.time.get_ticks()
 
@@ -248,6 +328,12 @@ while running:
             moneyMultiplier = 1
             wave = 0
             enemy_speed = 2.0
+            projectile_speed = 10
+            cannon_shoot_delay = 3000
+            enemy_speed = 2.0
+            enemy_spawn_delay = 1000
+            fire_cooldown = 1000
+            last_shot_time = 0
 
             # Restart title loop
             show_title = True
@@ -319,14 +405,19 @@ while running:
 
     #Wave logic
     if wave_active and spawned_enemies == enemies_remaining and len(enemies) == 0:
+        wave_active = False
+        wave_cooldown = pygame.time.get_ticks()
+
+        # Upgrade phase before next wave
+        upgrade_phase()
+
+        # After upgrade, start new wave
         wave += 1
         enemies_remaining = 5 + wave * 2
         spawned_enemies = 0
-        wave_active = False
-        wave_cooldown = pygame.time.get_ticks()
         if enemy_speed < 10:
             enemy_speed += 0.5
-            print(enemy_speed)
+
     if not wave_active:
         if pygame.time.get_ticks() - wave_cooldown > 2000:  # 2-second delay
             wave_active = True
